@@ -26,7 +26,9 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             "code":400,
             }
             return resp
+
         if len(operation_obj["columns"]) == 0:
+            
             resp =  {
                 "status": "Success",
                 "data": new_dataset,
@@ -34,9 +36,10 @@ async def call_processing_endpoint(dataset, operation_obj,email):
                 "code":200
             }
             return resp
+        
         async with httpx.AsyncClient() as client:
             data_to_send = dataset
-            url = "http://localhost:8000/data-featuring"
+            url = "http://localhost:8001/data-featuring"
             payload = {
                 'data': data_to_send,  
                 'columns': operation_obj["columns"]
@@ -44,6 +47,7 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             payload = json.dumps(payload)
             headers = {'Content-Type': 'application/json'}
             response = await client.post(url, content=payload, headers=headers)
+       
             if response.status_code == 200:
                 new_dataset = response.json()
                 resp = {
@@ -76,7 +80,7 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             return resp
         async with httpx.AsyncClient() as client:
             data_to_send = dataset
-            url = "http://localhost:8000/normalization"
+            url = "http://localhost:8001/normalization"
             payload = {
                 "data": data_to_send,  
                 "columns": operation_obj["columns"]
@@ -116,7 +120,7 @@ async def call_processing_endpoint(dataset, operation_obj,email):
         async with httpx.AsyncClient() as client:
             data_to_send = dataset
             
-            url = "http://localhost:8000/standardization"
+            url = "http://localhost:8001/standardization"
 
             payload = {
                 "data": data_to_send,  
@@ -124,7 +128,6 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             }
             
             response = await client.post(url, json=payload)
-            print(response.status_code)
             if response.status_code == 200:
                 new_dataset = response.json()
                 resp = {
@@ -147,7 +150,7 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             async with httpx.AsyncClient() as client:
                 data_to_send = dataset
                 
-                url = "http://localhost:8000/data-imputation"
+                url = "http://localhost:8001/data-imputation"
 
                 if "knn_imputation" in operation_obj and operation_obj["knn_imputation"]:
                     payload = {
@@ -159,12 +162,12 @@ async def call_processing_endpoint(dataset, operation_obj,email):
                         "regression_value_imputation_feature_columns": []
                     }
                     response = await client.post(url, json=payload)
-                    
+                   
 
                 elif "constant_value_imputation_columns" in operation_obj and len(operation_obj["constant_value_imputation_columns"]) != 0:
                     if "constant_value_imputation_values" in operation_obj:
                         data_to_send = dataset
-                        url = "http://localhost:8000/data-imputation"
+                        url = "http://localhost:8001/data-imputation"
 
                         payload = {
                             "data": data_to_send,  
@@ -180,7 +183,7 @@ async def call_processing_endpoint(dataset, operation_obj,email):
                 elif "regression_value_imputation_target_columns" in operation_obj and operation_obj["regression_value_imputation_target_columns"]:
                     if "regression_value_imputation_feature_columns" in operation_obj:
                         data_to_send = dataset
-                        url = "http://localhost:8000/data-imputation"
+                        url = "http://localhost:8001/data-imputation"
 
                         payload = {
                             "data": data_to_send,
@@ -241,12 +244,15 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             
             timeout_seconds = 600
             response = await client.post(url, json=payload,  timeout=timeout_seconds)
-        
+            
+           
             if response.status_code == 200:
+               
                resp = {
                 "status": "Success",
                 "data": new_dataset,
                 "message":"OK",
+                "model_name": json.loads(json.loads(response.text)["message"])["model_name"],
                 "code":200
                }
                return resp
