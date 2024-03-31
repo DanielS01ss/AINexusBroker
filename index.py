@@ -4,21 +4,27 @@ import json
 from fastapi import FastAPI, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from utils.fetch_data import fetch_data_from_database
+from utils.get_pipelines_for_user import get_pipelines_for_user
 from models.PipelineRequest import PipelineRequest
 from models.OperationRequest import OperationRequest
 from models.ModelDetailsRequest import ModelDetailsRequest
 from models.PipelineSave import PipelineSave
+from models.GeneratePipeline import GeneratePipeline
 from utils.save_pipeline import save_pipeline_for_user
 from utils.check_db_exists import fetch_and_check_db
 from utils.validate_pipeline_req import check_pipeline_request_obj
 from utils.store_authorization_headers import store_authorization_token
 from utils.modify_string import modify_string
+from utils.delete_minio_model_data import delete_minio_data
 from models.LogsRequest import LogsRequest
 from preprocessing_algs.microservice_calls import call_processing_endpoint
 from utils.pipeline_processing import pipeline_handler
 from utils.delete_logs_for_user import delete_logs_for_user
 from utils.save_logs_for_user import save_logs_for_user
 from utils.get_user_logs import get_user_logs
+from preprocessing_algs.generate_pipeline_description import generate_pipeline_description
+from utils.delete_user_pipeline import delete_user_pipeline
+from utils.delete_model_from_db import delete_model_from_db
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -128,6 +134,14 @@ async def models(email: str = Query(..., description="The email address of the u
     else:
         return JSONResponse(content={"message": "The email is missing!"}, status_code=400)
     
+@app.delete("/model")
+async def delete_model(model_name: str = Query(..., description="The email address of the user to retrieve.")):
+    if len(model_name) == 0:
+        return JSONResponse(content={"message": "Model name is missing"}, status_code=400)
+    else:
+        delete_model_from_db(model_name)
+        delete_minio_data(model_name)
+        return JSONResponse(content={"message": "The model was successfully deleted!"}, status_code=200)
 
 @app.post("/start_pipeline")
 async def root(req: PipelineRequest):
@@ -141,6 +155,9 @@ async def root(req: PipelineRequest):
         fetched_data = await fetch_data_from_database(db_found)
     else:
         raise HTTPException(status_code=404, detail="Dataset not found")
+
+    fetched_data = fetched_data.drop("id", axis=1)
+    
 
     fetched_data_dict = json.dumps(fetched_data.to_dict(orient='records'))
     pipeline_steps_status = {
@@ -186,5 +203,38 @@ async def save_pipeline(req:PipelineSave):
     else:
          return JSONResponse(content={"message": "Empty fields!" }, status_code=400)
 
+@app.post("/generate-pipeline")    
+async def generate_pipeline(req: GeneratePipeline ):
+    db_found = None
+    fetched_data = None
+    if req.dataset_name:
+        db_found = fetch_and_check_db(req.dataset_name)
+
+    if db_found:
+        fetched_data = await fetch_data_from_database(db_found)
+    else:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    generate_pipeline_description(fetched_data)
+    
+    return JSONResponse(content={"message": "Success!" }, status_code=200)
+
+@app.get("/saved-pipelines")
+async def get_saved_pipelines(user_email:  str = Query(..., description="The email address of the user to retrieve.")):
+    if len(user_email) == 0:
+        return JSONResponse(content={"message": "No email provided!" }, status_code=400)
+    else :
+        all_pipelines = await get_pipelines_for_user(user_email)
+        return JSONResponse(content={"data": all_pipelines }, status_code=200)
+    
+@app.delete("/pipeline")
+async def delete_pipeline(pipeline_name:  str = Query(..., description="The email address of the user to retrieve.")):
+    if len(pipeline_name) == 0:
+        return JSONResponse(content={"message": "No pipeline name provided!" }, status_code=400)
+    else:
+        delete_user_pipeline(pipeline_name)
+        return JSONResponse(content={"message": "Success!" }, status_code=200)
+    
+    
 if __name__ == '__main__':
     uvicorn.run(app,host='0.0.0.0', port=8081)
