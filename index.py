@@ -3,6 +3,7 @@ import httpx
 import json
 from fastapi import FastAPI, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import File,  UploadFile
 from utils.fetch_data import fetch_data_from_database
 from utils.get_pipelines_for_user import get_pipelines_for_user
 from models.PipelineRequest import PipelineRequest
@@ -16,15 +17,23 @@ from utils.validate_pipeline_req import check_pipeline_request_obj
 from utils.store_authorization_headers import store_authorization_token
 from utils.modify_string import modify_string
 from utils.delete_minio_model_data import delete_minio_data
+from utils.delete_dataset_after_id import delete_dataset_after_id
 from models.LogsRequest import LogsRequest
 from preprocessing_algs.microservice_calls import call_processing_endpoint
 from utils.pipeline_processing import pipeline_handler
 from utils.delete_logs_for_user import delete_logs_for_user
 from utils.save_logs_for_user import save_logs_for_user
 from utils.get_user_logs import get_user_logs
+from utils.get_columns_for_encoding import get_columns_for_encoding
 from preprocessing_algs.generate_pipeline_description import generate_pipeline_description
 from utils.delete_user_pipeline import delete_user_pipeline
 from utils.delete_model_from_db import delete_model_from_db
+from utils.check_and_fetch_minio import check_and_fetch_minio
+from utils.upload_file_metadata import upload_file_metadata
+from models.UploadMetadata import UploadMetadata
+from io import BytesIO  # Importă BytesIO
+from minio import Minio
+from minio.error import S3Error
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -143,6 +152,12 @@ async def delete_model(model_name: str = Query(..., description="The email addre
         delete_minio_data(model_name)
         return JSONResponse(content={"message": "The model was successfully deleted!"}, status_code=200)
 
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    content = await file.read()
+    
+    return {"filename": file.filename}
+
 @app.post("/start_pipeline")
 async def root(req: PipelineRequest):
 
@@ -150,13 +165,18 @@ async def root(req: PipelineRequest):
     fetched_data = None
     if req.dataset_name:
         db_found = fetch_and_check_db(req.dataset_name)
+    
+    if not db_found:
+        return JSONResponse(content={"message": "This database does not exist!" }, status_code=400)
 
-    if db_found:
-        fetched_data = await fetch_data_from_database(db_found)
+    if db_found[-1] != req.email and db_found[-1] != 'admin':
+        return JSONResponse(content={"message": "This user is not allowed to use this dataset" }, status_code=400)    
+    
+    if db_found[-1] != 'admin':
+        fetched_data = check_and_fetch_minio(db_found[-2])
     else:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    fetched_data = fetched_data.drop("id", axis=1)
+        fetched_data = await fetch_data_from_database(db_found[-2])
+        fetched_data = fetched_data.drop("id", axis=1)
     
 
     fetched_data_dict = json.dumps(fetched_data.to_dict(orient='records'))
@@ -195,6 +215,11 @@ async def root(req: PipelineRequest):
     pipeline_steps_status = json.dumps(pipeline_steps_status)
     return pipeline_steps_status
 
+@app.delete("/dataset")
+async def delete_dataset(id: int = Query(..., description="The email address of the user to retrieve.")):
+    delete_dataset_after_id(id)
+    return JSONResponse(content={"message": "Success!" }, status_code=200)
+
 @app.post("/save/pipeline")
 async def save_pipeline(req:PipelineSave):
     if len(req.user_email) != 0 and len(req.pipeline_name) != 0 and len(req.pipeline_data):
@@ -223,7 +248,7 @@ async def generate_pipeline(req: GeneratePipeline ):
 async def get_saved_pipelines(user_email:  str = Query(..., description="The email address of the user to retrieve.")):
     if len(user_email) == 0:
         return JSONResponse(content={"message": "No email provided!" }, status_code=400)
-    else :
+    else:
         all_pipelines = await get_pipelines_for_user(user_email)
         return JSONResponse(content={"data": all_pipelines }, status_code=200)
     
@@ -234,7 +259,61 @@ async def delete_pipeline(pipeline_name:  str = Query(..., description="The emai
     else:
         delete_user_pipeline(pipeline_name)
         return JSONResponse(content={"message": "Success!" }, status_code=200)
+
+@app.post("/uploadmetadata")
+async def uploadmetadata(req: UploadMetadata):
+    if len(req.user_email) == 0  or len(req.file_name) == 0 or len(req.tags) == 0 or len(req.authors) == 0 or len(req.publish) == 0 or len(req.description) == 0:
+        return JSONResponse(content={"message": "One or more parameter is empty!" }, status_code=400)    
+    else:
+       await upload_file_metadata(req.user_email, req.file_name, req.tags, req.authors, req.publish, req.description)
+    return JSONResponse(content={"message": "Success!" }, status_code=200)
+
+@app.get("/columns-for-encoding")
+async def uploadmetadata(dataset_name:  str = Query(..., description="The dataset that will be fetched!")):
+    db_found = None
+    fetched_data = None
+    if dataset_name:
+        db_found = fetch_and_check_db(dataset_name)
     
+    if not db_found:
+        return JSONResponse(content={"message": "This database does not exist!" }, status_code=400)
+    if db_found[-1] != 'admin':
+        fetched_data = check_and_fetch_minio(db_found[-2])
+    else:
+        fetched_data = await fetch_data_from_database(db_found[-2])
+        fetched_data = fetched_data.drop("id", axis=1)
+    
+    columns_encoding = get_columns_for_encoding(fetched_data)
+    
+    return JSONResponse(content={"columns": columns_encoding}, status_code=200)
+
+
+@app.post("/uploadfile/")
+async def create_upload_file(file: UploadFile = File(...)):
+    minioClient = Minio(
+    "127.0.0.1:9000",
+    access_key="LjYOcfvfYyfYPg0ea3D3",
+    secret_key="QKd4F1cgxMTLAh2MFtHYTWePbrurXNeMlf13h06D",
+    secure=False  # Setează True pentru HTTPS
+    )
+    try:
+        
+        bucket_name = "datasets"
+        file_content = await file.read()
+        file_stream = BytesIO(file_content)
+
+        minioClient.put_object(
+            bucket_name,
+            file.filename,
+            file_stream,
+            length=len(file_content),
+            content_type=file.content_type
+        )
+
+        return {"message": f"Fișierul '{file.filename}' a fost încărcat cu succes!"}
+    except S3Error as exc:
+        return {"error": str(exc)}
+  
     
 if __name__ == '__main__':
     uvicorn.run(app,host='0.0.0.0', port=8081)

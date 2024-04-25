@@ -16,4 +16,3 @@ def generate_pipeline_description():
 
     # print(response.status_code, response.json())
     
-# generate_pipeline_description()

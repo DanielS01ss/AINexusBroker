@@ -14,8 +14,8 @@ def fetch_and_check_db(db_to_search: str):
     cursor.execute(sql_statement)
     result = cursor.fetchall()
     for res in result:
-        if res[-1] == db_to_search:
-            return db_to_search
+        if res[-2] == db_to_search:
+            return res
 
     return None
 

@@ -226,8 +226,161 @@ async def call_processing_endpoint(dataset, operation_obj,email):
         except Exception as e:
             print("There was an error:")
             print(e)
+    
+
+    elif operation_obj['operation_name'] == "Outlier Removal":
+        if "columns" not in operation_obj:
+            resp =  {
+            "status": "Error",
+            "data": new_dataset,
+            "message":"Invalid request object",
+            "code":400,
+            }
+            return resp
+
+        if len(operation_obj["columns"]) == 0:
+            
+            resp =  {
+                "status": "Success",
+                "data": new_dataset,
+                "message":"OK",
+                "code":200
+            }
+            return resp
         
+        async with httpx.AsyncClient() as client:
+            data_to_send = dataset
+            url = "http://localhost:8001/outlier-removal"
+            payload = {
+                'data': data_to_send,  
+                'columns': operation_obj["columns"]
+            }
+            payload = json.dumps(payload)
+            headers = {'Content-Type': 'application/json'}
+            response = await client.post(url, content=payload, headers=headers)
+       
+            if response.status_code == 200:
+                new_dataset = response.json()
+                resp = {
+                "status": "Success",
+                "data": new_dataset,
+                "message":"OK",
+                "code":200
+                }
+                return resp
+            else:
+               
+                resp = {
+                "status": "Error",
+                "data": new_dataset,
+                "message":"There was a problem while processing request!",
+                "code":500
+                }
+                
+                return resp
+    elif operation_obj['operation_name'] == "Log Transformation":
+        if "columns" not in operation_obj:
+            resp =  {
+            "status": "Error",
+            "data": new_dataset,
+            "message":"Invalid request object",
+            "code":400,
+            }
+            return resp
+
+        if len(operation_obj["columns"]) == 0:
+            
+            resp =  {
+                "status": "Success",
+                "data": new_dataset,
+                "message":"OK",
+                "code":200
+            }
+            return resp
         
+        async with httpx.AsyncClient() as client:
+            data_to_send = dataset
+            url = "http://localhost:8001/log-transformation"
+            payload = {
+                'data': data_to_send,  
+                'columns': operation_obj["columns"]
+            }
+            payload = json.dumps(payload)
+            headers = {'Content-Type': 'application/json'}
+            response = await client.post(url, content=payload, headers=headers)
+       
+            if response.status_code == 200:
+                new_dataset = response.json()
+                resp = {
+                "status": "Success",
+                "data": new_dataset,
+                "message":"OK",
+                "code":200
+                }
+                return resp
+            else:
+               
+                resp = {
+                "status": "Error",
+                "data": new_dataset,
+                "message":"There was a problem while processing request!",
+                "code":500
+                }
+                
+                return resp
+    elif operation_obj['operation_name'] == "Feature Encoding":
+            if "columns" not in operation_obj:
+                resp =  {
+                "status": "Error",
+                "data": new_dataset,
+                "message":"Invalid request object",
+                "code":400,
+                }
+                return resp
+
+            if len(operation_obj["columns"]) == 0:
+                
+                resp =  {
+                    "status": "Success",
+                    "data": new_dataset,
+                    "message":"OK",
+                    "code":200
+                }
+                return resp
+            
+            async with httpx.AsyncClient() as client:
+                data_to_send = dataset
+                url = "http://localhost:8001/feature-encoding"
+                payload = {
+                    'data': data_to_send,  
+                    'encoding_type': operation_obj["encoding_type"],
+                    'target_column': operation_obj["target_column"],
+                    'columns': operation_obj["columns"]
+                }
+                payload = json.dumps(payload)
+                headers = {'Content-Type': 'application/json'}
+                response = await client.post(url, content=payload, headers=headers)
+        
+                if response.status_code == 200:
+                    new_dataset = response.json()
+                    resp = {
+                    "status": "Success",
+                    "data": new_dataset,
+                    "message":"OK",
+                    "code":200
+                    }
+                    return resp
+                else:
+                
+                    resp = {
+                    "status": "Error",
+                    "data": new_dataset,
+                    "message":"There was a problem while processing request!",
+                    "code":500
+                    }
+                    
+                    return resp
+            
     elif operation_obj['operation_name'] == "Model Training":
         async with httpx.AsyncClient() as client:
             token = get_authorization_token()
