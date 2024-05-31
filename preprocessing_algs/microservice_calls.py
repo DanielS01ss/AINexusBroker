@@ -386,12 +386,14 @@ async def call_processing_endpoint(dataset, operation_obj,email):
             token = get_authorization_token()
             data_to_send = dataset
             url = "http://localhost:8086/api/models/train"
+            
             payload = {
                  "data": data_to_send,
                  "model_name": operation_obj["ml_algorithm"],
                  "model_params": {
                     "target": operation_obj["target"]
                  },
+                 "model_parameters": operation_obj["model_parameters"],
                  "email": email
             }
             

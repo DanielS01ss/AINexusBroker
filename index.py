@@ -11,6 +11,7 @@ from models.OperationRequest import OperationRequest
 from models.ModelDetailsRequest import ModelDetailsRequest
 from models.PipelineSave import PipelineSave
 from models.GeneratePipeline import GeneratePipeline
+from models.GenerateKey import GenerateKey
 from utils.save_pipeline import save_pipeline_for_user
 from utils.check_db_exists import fetch_and_check_db
 from utils.validate_pipeline_req import check_pipeline_request_obj
@@ -18,6 +19,7 @@ from utils.store_authorization_headers import store_authorization_token
 from utils.modify_string import modify_string
 from utils.delete_minio_model_data import delete_minio_data
 from utils.delete_dataset_after_id import delete_dataset_after_id
+from utils.fetch_generated_key import fetch_generated_key
 from models.LogsRequest import LogsRequest
 from preprocessing_algs.microservice_calls import call_processing_endpoint
 from utils.pipeline_processing import pipeline_handler
@@ -30,6 +32,8 @@ from utils.delete_user_pipeline import delete_user_pipeline
 from utils.delete_model_from_db import delete_model_from_db
 from utils.check_and_fetch_minio import check_and_fetch_minio
 from utils.upload_file_metadata import upload_file_metadata
+from utils.generate_and_store_key import generate_and_store_key
+from utils.delete_key import delete_key_for_user
 from models.UploadMetadata import UploadMetadata
 from io import BytesIO  # Importă BytesIO
 from minio import Minio
@@ -232,17 +236,22 @@ async def save_pipeline(req:PipelineSave):
 async def generate_pipeline(req: GeneratePipeline ):
     db_found = None
     fetched_data = None
+
     if req.dataset_name:
         db_found = fetch_and_check_db(req.dataset_name)
 
     if db_found:
-        fetched_data = await fetch_data_from_database(db_found)
+        fetched_data = await fetch_data_from_database(db_found[-2])
     else:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
-    generate_pipeline_description(fetched_data)
     
-    return JSONResponse(content={"message": "Success!" }, status_code=200)
+    if len(req.problem_type) == 0 or len(req.target_column) == 0:
+        raise HTTPException(status_code=400, detail="Bad request")
+    
+  
+    resp = generate_pipeline_description(fetched_data, req.problem_type, req.target_column, req.dataset_name)
+    
+    return JSONResponse(content={"generated_pipeline": resp }, status_code=200)
 
 @app.get("/saved-pipelines")
 async def get_saved_pipelines(user_email:  str = Query(..., description="The email address of the user to retrieve.")):
@@ -287,6 +296,30 @@ async def uploadmetadata(dataset_name:  str = Query(..., description="The datase
     
     return JSONResponse(content={"columns": columns_encoding}, status_code=200)
 
+@app.post("/generate-key")
+async def generate_key(key_data: GenerateKey):
+    if len(key_data.user_email) == 0:
+        raise HTTPException(status_code=400, detail="Username parameter should not be empty!")
+    else:
+        the_key =  generate_and_store_key(key_data.user_email) 
+        return JSONResponse(content={"key": the_key }, status_code=200)
+
+@app.delete("/generate-key")
+async def delete_generated_key(key_data: str = Query(..., description="The dataset that will be fetched!")):
+    if len(key_data) == 0:
+        raise HTTPException(status_code=400, detail="Username parameter should not be empty!")
+    else:
+        delete_key_for_user(key_data) 
+        return JSONResponse(content={"message": "Success!" }, status_code=200)
+
+@app.get("/generate-key")
+async def get_generated_key(key_data: str = Query(..., description="The dataset that will be fetched!")):
+    if len(key_data) == 0:
+        raise HTTPException(status_code=400, detail="Username parameter should not be empty!")
+    else:
+        fetched_keys = await fetch_generated_key(key_data)
+        
+    return JSONResponse(content={"keys": fetched_keys }, status_code=200) 
 
 @app.post("/uploadfile/")
 async def create_upload_file(file: UploadFile = File(...)):
@@ -317,3 +350,4 @@ async def create_upload_file(file: UploadFile = File(...)):
     
 if __name__ == '__main__':
     uvicorn.run(app,host='0.0.0.0', port=8081)
+
